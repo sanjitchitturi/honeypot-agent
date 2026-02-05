@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional
@@ -69,10 +69,10 @@ def health_check():
         "service": "honeypot-api"
     }
 
-@app.get("/test")
-def test_authentication(x_api_key: str = Header(None, alias="x-api-key")):
+@app.api_route("/test", methods=["GET", "POST"])
+async def test_authentication(request: Request, x_api_key: str = Header(None, alias="x-api-key")):
     """
-    Test endpoint for validation
+    Test endpoint for validation - supports both GET and POST
     Verifies API authentication and endpoint availability
     """
     if not x_api_key:
@@ -91,7 +91,8 @@ def test_authentication(x_api_key: str = Header(None, alias="x-api-key")):
         "status": "success",
         "message": "Honeypot endpoint is reachable and authenticated",
         "authenticated": True,
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.utcnow().isoformat(),
+        "method": request.method
     }
 
 @app.post("/api/honeypot/analyze", response_model=ScamAnalysisResponse)
