@@ -1,20 +1,51 @@
-import anthropic
 import json
 import re
+import random
 from typing import Dict, List, Tuple
 from config import *
 
 class HoneypotAgent:
+    """
+    DEMO MODE: Simulates AI responses without calling external APIs
+    Perfect for testing API structure and endpoints
+    """
     def __init__(self):
-        self.client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
         self.conversation_history: Dict[str, List[Dict]] = {}
+        self.demo_responses = {
+            "prize_scam": [
+                "Oh my goodness, really?! I can't believe I won! This is so exciting! How exactly do I claim this prize? Do I need to provide any verification first?",
+                "Wow, $50,000! That's amazing! What do I need to do? Should I send you my bank details now?",
+                "This is wonderful news! I've never won anything before. Can you tell me more about how this works?"
+            ],
+            "phishing": [
+                "Oh no, my account is compromised? That's terrible! What should I do? Should I click that link you sent?",
+                "I'm so worried about my account. Can you help me secure it? What information do you need from me?",
+                "Thank you for letting me know. I'll click on that link right away to verify my account."
+            ],
+            "investment_fraud": [
+                "This investment opportunity sounds incredible! A 50% return in just one month? How do I get started?",
+                "I've been looking for good investment options. Can you tell me more about this? How much should I invest initially?",
+                "That sounds too good to be true, but I trust you! What's the minimum investment amount?"
+            ],
+            "tech_support_scam": [
+                "Oh dear, my computer has a virus? I didn't know! How can you help me fix it? Do you need remote access?",
+                "Thank you for calling! Yes, my computer has been running slowly. What do I need to do to fix it?",
+                "A virus? That's scary! Should I give you access to my computer to remove it?"
+            ],
+            "default": [
+                "That sounds interesting! Can you tell me more about this?",
+                "I see. How exactly does this work? I want to make sure I understand correctly.",
+                "Okay, I'm listening. What do I need to do next?"
+            ]
+        }
     
     def analyze_message(self, message: str, conversation_id: str = None) -> Dict:
         """
-        Main analysis function - detects scams and generates responses
+        Demo analysis function - detects scams using keyword matching
+        and generates realistic responses
         """
-        # Step 1: Detect if it's a scam
-        is_scam, confidence, scam_type, reasoning = self._detect_scam(message)
+        # Step 1: Detect if it's a scam using keywords
+        is_scam, confidence, scam_type, reasoning = self._detect_scam_demo(message)
         
         # Step 2: Extract intelligence from the message
         extracted_intel = self._extract_intelligence(message)
@@ -24,11 +55,7 @@ class HoneypotAgent:
         persona_used = None
         
         if is_scam and confidence >= SCAM_CONFIDENCE_THRESHOLD:
-            ai_response, persona_used = self._generate_victim_response(
-                message, 
-                scam_type, 
-                conversation_id
-            )
+            ai_response, persona_used = self._generate_demo_response(scam_type)
         
         # Step 4: Store conversation history
         if conversation_id:
@@ -53,65 +80,52 @@ class HoneypotAgent:
             "total_intelligence_collected": self._aggregate_intelligence(conversation_id)
         }
     
-    def _detect_scam(self, message: str) -> Tuple[bool, float, str, str]:
+    def _detect_scam_demo(self, message: str) -> Tuple[bool, float, str, str]:
         """
-        Uses Claude to detect if message is a scam
+        Demo scam detection using keyword patterns
         """
-        try:
-            response = self.client.messages.create(
-                model=CLAUDE_MODEL,
-                max_tokens=800,
-                temperature=0.3,  # Lower temperature for more consistent detection
-                messages=[{
-                    "role": "user",
-                    "content": f"""You are an expert scam detection system. Analyze this message:
-
-MESSAGE: "{message}"
-
-Determine:
-1. Is this a scam/phishing/fraud attempt?
-2. What type of scam is it?
-3. Confidence level (0.0 to 1.0)
-
-Common scam types:
-- phishing (fake links, credential theft)
-- prize_scam (fake lottery, rewards)
-- impersonation (pretending to be bank, government, company)
-- investment_fraud (fake investments, crypto scams)
-- romance_scam (fake relationships for money)
-- tech_support_scam (fake technical issues)
-- job_scam (fake job offers requiring payment)
-- donation_scam (fake charity)
-
-Respond ONLY in this JSON format:
-{{
-    "is_scam": true/false,
-    "confidence": 0.0-1.0,
-    "scam_type": "type_from_list_above",
-    "reasoning": "brief explanation of why this is/isn't a scam"
-}}"""
-                }]
-            )
-            
-            response_text = response.content[0].text
-            result = self._extract_json(response_text)
-            
-            return (
-                result.get("is_scam", False),
-                float(result.get("confidence", 0.5)),
-                result.get("scam_type", "unknown"),
-                result.get("reasoning", "Analysis completed")
-            )
-            
-        except Exception as e:
-            print(f"Error in scam detection: {e}")
-            return False, 0.0, "error", f"Detection failed: {str(e)}"
+        message_lower = message.lower()
+        
+        # Prize/Lottery scams
+        if any(word in message_lower for word in ['won', 'winner', 'prize', 'lottery', 'congratulations', 'claim']):
+            return True, 0.92, "prize_scam", "Message contains typical prize scam indicators: offering unexpected prizes/winnings and urgency to claim"
+        
+        # Phishing
+        if any(word in message_lower for word in ['verify', 'account', 'suspended', 'click', 'link', 'confirm', 'urgent']):
+            return True, 0.88, "phishing", "Message shows phishing characteristics: requests to verify account or click links with sense of urgency"
+        
+        # Investment fraud
+        if any(word in message_lower for word in ['investment', 'profit', 'return', 'crypto', 'bitcoin', 'opportunity', 'guaranteed']):
+            return True, 0.85, "investment_fraud", "Message exhibits investment fraud patterns: promises of high returns or guaranteed profits"
+        
+        # Tech support scam
+        if any(word in message_lower for word in ['virus', 'infected', 'tech support', 'microsoft', 'apple', 'refund', 'computer']):
+            return True, 0.90, "tech_support_scam", "Message matches tech support scam indicators: claims of computer issues or need for technical assistance"
+        
+        # Impersonation
+        if any(word in message_lower for word in ['bank', 'irs', 'government', 'official', 'payment', 'tax', 'penalty']):
+            return True, 0.87, "impersonation", "Message appears to impersonate official organizations: banks, government agencies, or authorities"
+        
+        # Romance scam
+        if any(word in message_lower for word in ['love', 'darling', 'money', 'emergency', 'hospital', 'stranded']):
+            return True, 0.83, "romance_scam", "Message contains romance scam elements: emotional manipulation combined with financial requests"
+        
+        # Job scam
+        if any(word in message_lower for word in ['job', 'work from home', 'easy money', 'hiring', 'recruitment fee']):
+            return True, 0.86, "job_scam", "Message shows job scam characteristics: promises of easy money or requests for upfront fees"
+        
+        # Check for bank account, UPI, payment requests
+        if any(word in message_lower for word in ['bank account', 'account number', 'upi', 'send money', 'transfer']):
+            return True, 0.94, "payment_request_scam", "Message directly requests financial information or money transfer - major red flag"
+        
+        # Not a scam
+        return False, 0.15, "legitimate", "Message appears to be legitimate communication with no obvious scam indicators"
     
-    def _generate_victim_response(self, message: str, scam_type: str, conversation_id: str) -> Tuple[str, str]:
+    def _generate_demo_response(self, scam_type: str) -> Tuple[str, str]:
         """
-        Generates a believable victim response to engage the scammer
+        Generates a demo victim response based on scam type
         """
-        # Select appropriate persona based on scam type
+        # Select persona
         if scam_type in ["prize_scam", "investment_fraud"]:
             persona_key = "desperate"
         elif scam_type in ["tech_support_scam", "phishing"]:
@@ -119,60 +133,11 @@ Respond ONLY in this JSON format:
         else:
             persona_key = "young_professional"
         
-        persona = VICTIM_PERSONAS[persona_key]
+        # Get appropriate response
+        responses = self.demo_responses.get(scam_type, self.demo_responses["default"])
+        response = random.choice(responses)
         
-        # Get conversation history for context
-        history = self.conversation_history.get(conversation_id, [])
-        context = ""
-        if history:
-            context = f"\n\nPrevious conversation:\n"
-            for turn in history[-3:]:  # Last 3 turns for context
-                context += f"Scammer: {turn['scammer_message']}\n"
-                context += f"You: {turn['our_response']}\n"
-        
-        try:
-            response = self.client.messages.create(
-                model=CLAUDE_MODEL,
-                max_tokens=MAX_TOKENS,
-                temperature=TEMPERATURE,
-                messages=[{
-                    "role": "user",
-                    "content": f"""You are roleplaying as a potential scam victim to extract information from scammers.
-
-PERSONA:
-- Name: {persona['name']}
-- Age: {persona['age']}
-- Traits: {persona['traits']}
-- Communication style: {persona['style']}
-
-SCAM TYPE: {scam_type}
-
-SCAMMER'S MESSAGE: "{message}"{context}
-
-YOUR GOAL:
-1. Respond as {persona['name']} would - stay IN CHARACTER
-2. Show interest to keep the scammer engaged
-3. Ask questions that might reveal: bank details, UPI IDs, phone numbers, links, payment methods
-4. Sound believable - not too eager, show some natural hesitation
-5. DO NOT reveal you know it's a scam
-6. Gradually increase trust to extract more information
-
-Example approaches:
-- Ask how the process works
-- Express concern about security (to get them to "reassure" you with details)
-- Ask for verification (might reveal fake credentials)
-- Mention you need to check with someone (buys time, tests their urgency)
-
-Respond ONLY with the message you would send (no JSON, no explanation, just the response as {persona['name']})."""
-                }]
-            )
-            
-            victim_response = response.content[0].text.strip()
-            return victim_response, persona_key
-            
-        except Exception as e:
-            print(f"Error generating response: {e}")
-            return "That sounds interesting! Can you tell me more about this?", persona_key
+        return response, persona_key
     
     def _extract_intelligence(self, message: str) -> Dict[str, List[str]]:
         """
@@ -205,7 +170,9 @@ Respond ONLY with the message you would send (no JSON, no explanation, just the 
                 intel["emails"] = list(set(matches))
         
         # Detect payment method mentions
-        payment_keywords = ["paytm", "phonepe", "gpay", "google pay", "paypal", "venmo", "western union", "moneygram", "bank transfer", "wire transfer", "bitcoin", "crypto"]
+        payment_keywords = ["paytm", "phonepe", "gpay", "google pay", "paypal", "venmo", 
+                           "western union", "moneygram", "bank transfer", "wire transfer", 
+                           "bitcoin", "crypto", "zelle", "cashapp"]
         for keyword in payment_keywords:
             if keyword.lower() in message.lower():
                 intel["payment_methods"].append(keyword)
@@ -219,7 +186,15 @@ Respond ONLY with the message you would send (no JSON, no explanation, just the 
         Aggregates all intelligence collected in a conversation
         """
         if not conversation_id or conversation_id not in self.conversation_history:
-            return {}
+            return {
+                "phone_numbers": [],
+                "bank_accounts": [],
+                "ifsc_codes": [],
+                "upi_ids": [],
+                "urls": [],
+                "emails": [],
+                "payment_methods": []
+            }
         
         aggregated = {
             "phone_numbers": set(),
@@ -238,17 +213,3 @@ Respond ONLY with the message you would send (no JSON, no explanation, just the 
         
         # Convert sets back to lists for JSON serialization
         return {k: list(v) for k, v in aggregated.items()}
-    
-    def _extract_json(self, text: str) -> Dict:
-        """
-        Safely extracts JSON from Claude's response
-        """
-        try:
-            # Try to find JSON in the text
-            json_match = re.search(r'\{.*\}', text, re.DOTALL)
-            if json_match:
-                return json.loads(json_match.group())
-            else:
-                return json.loads(text)
-        except:
-            return {}
